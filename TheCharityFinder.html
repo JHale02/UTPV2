@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>The Charity Finder</title>
+    <link rel="stylesheet" href="charitiesStyleSheet.css">
+</head>
+
+<body>
+    <!-- Map container -->
+    <div id="map"></div>
+
+    <div id="filter-menu">
+        <div id="menu-content">
+            <div class="dropdown">
+                <button class="dropbtn">Charity Filter</button>
+                <div class="dropdown-content">
+                    <input type="radio" id="allCharities" name="charityFilter" value="All" checked>
+                    <label for="allCharities">All</label>
+                    <input type="radio" id="cancerResearch" name="charityFilter" value="Cancer Research">
+                    <label for="cancerResearch">Cancer Research</label>
+                    <input type="radio" id="cardiovascularResearch" name="charityFilter"
+                        value="Cardiovascular Research">
+                    <label for="cardiovascularResearch">Cardiovascular Research</label>
+                    <input type="radio" id="christianCharity" name="charityFilter" value="Christian Church and Charity">
+                    <label for="christianCharity">Christian Charities</label>
+                </div>
+            </div>
+            <div class="dropdown">
+                <button class="dropbtn">Shift Filter</button>
+                <div class="dropdown-content">
+                    <input type="radio" id="allHours" name="shiftFilter" value="AllHours" checked>
+                    <label for="allHours">Any Shift</label>
+                    <input type="radio" id="4hours" name="shiftFilter" value="4">
+                    <label for="4hours">4 Hour Shift</label>
+                    <input type="radio" id="8hours" name="shiftFilter" value="8">
+                    <label for="8hours">8 Hour Shift</label>
+                    <input type="radio" id="12hour" name="shiftFilter" value="12">
+                    <label for="12hour">12 Hours Shift</label>
+                </div>
+            </div>
+            <div class="dropdown">
+                <button class="dropbtn">Day Filter</button>
+                <div class="dropdown-content">
+                    <input type="radio" id="allDays" name="dayFilter" value="All" checked>
+                    <label for="allDays">Any Day</label>
+                    <input type="radio" id="monday" name="dayFilter" value="Monday">
+                    <label for="monday">Monday</label>
+                    <input type="radio" id="tuesday" name="dayFilter" value="Tuesday">
+                    <label for="tuesday">Tuesday</label>
+                    <input type="radio" id="wednesday" name="dayFilter" value="Wednesday">
+                    <label for="wednesday">Wednesday</label>
+                    <input type="radio" id="thursday" name="dayFilter" value="Thursday">
+                    <label for="thursday">Thursday</label>
+                    <input type="radio" id="friday" name="dayFilter" value="Friday">
+                    <label for="friday">Friday</label>
+                    <input type="radio" id="saturday" name="dayFilter" value="Saturday">
+                    <label for="saturday">Saturday</label>
+                    <input type="radio" id="sunday" name="dayFilter" value="Sunday">
+                    <label for="sunday">Sunday</label>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- No charity Found pop up div -->
+    <div id="popup1" class="overlay">
+        <div class="popup">
+            <h2>No Charities Found!</h2>
+            <a class="close" href="#" onclick="closePopup();">&times;</a>
+            <div class="content">
+                Unfortunately there are no charities available with your chosen filters!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        //Variables
+        let markers = [];
+        let displayMakers = [];
+        let map;
+        let infoWindow;
+        let service; // Google Places service
+
+        // init map values
+        async function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 14,
+                center: { lat: 54.978400254344784, lng: -1.61756516783594 },
+                mapId: "4504f8b37365c3d0",
+            });
+
+            infoWindow = new google.maps.InfoWindow();
+            service = new google.maps.places.PlacesService(map);
+
+            //where database is stored
+            fetchDataFromFirebase('https://kv6002-39b35-default-rtdb.firebaseio.com/KV6002/charities.json')
+                .then(data => {
+                    createMarkersForCharities(data);
+                });
+
+            //adds onclick event to filters
+            const buttons = document.querySelectorAll('[name="shiftFilter"], [name="charityFilter"], [name="dayFilter"]');
+            buttons.forEach(function (button) {
+                button.addEventListener("click", function () {
+                    var selectedType = document.querySelector('input[name="charityFilter"]:checked').value;
+                    var selectedDay = document.querySelector('input[name="dayFilter"]:checked').value;
+                    var selectedShift = document.querySelector('input[name="shiftFilter"]:checked').value;
+                    //deletes all map markers
+                    setMapOnAll(null);
+                    //resets display markers
+                    displayMakers = [];
+                    for (let i = 0; i < markers.length; i++) {
+                        if (markers[i].charityType.includes(selectedType) && markers[i].shiftHours.includes(selectedShift) && markers[i].availableDays.includes(selectedDay)) {
+                            displayMakers.push(markers[i]);
+                        }
+                    }
+                    if (displayMakers.length == 0) {
+                        displayPopup();
+                    }
+                    setCharitySpecific(map);
+                });
+            });
+
+        }
+
+        //Pop up for no charitys found from filters
+        function displayPopup() {
+            document.getElementById("popup1").style.display = "block";
+        }
+
+        function closePopup() {
+            document.getElementById("popup1").style.display = "none";
+        }
+        
+        //fetches data from previously used database
+        async function fetchDataFromFirebase(url) {
+            return fetch(url)
+                .then(response => response.json())
+                .catch(error => {
+                    console.error('Error fetching JSON:', error);
+                });
+        }
+
+        //Creates markers using data from database
+        async function createMarkersForCharities(data) {
+            for (const charity of Object.values(data)) {
+                const charityName = charity.name;
+                const charityType = charity.type;
+                const shiftLength = charity.hours;
+                const charityDesc = charity.description;
+                const coords = charity.coordinates;
+                const avaDays = charity.avaiableDays;
+
+                const contentString = `<h1>${charityName}</h1><h3>${charityDesc}</h3><p>Address: Loading...</p><p>Rating: Loading...</p>`;
+                const latLng = new google.maps.LatLng(coords.latitude, coords.longitude);
+
+                //radius around points to get address and rating
+                const request = {
+                    location: latLng,
+                    radius: '50',
+                    type: 'point_of_interest',
+                    query: charityName
+                };
+
+                //seraches based on name of charity
+                service.textSearch(request, (results, status) => {
+                    if (status === google.maps.places.PlacesServiceStatus.OK) {
+                        const place = results.find(result => result.name === charityName);
+                        if (place) {
+                            const address = place.formatted_address || 'Address not available';
+                            const rating = place.rating || 'Rating not available';
+                            const windowContent = `<h1>${charityName}</h1><h3>${charityDesc}</h3><p>Address: ${address}</p><p>Rating: ${rating}</p>`;
+                            createMapMarker(latLng, windowContent, charityType, shiftLength, avaDays);
+                        } else {
+                            console.error(`No results found for: ${charityName}`);
+                        }
+                    } else {
+                        console.error('Error fetching place details:', status);
+                    }
+                });
+
+                //finds data from coordinates
+                const geocoder = new google.maps.Geocoder();
+                geocoder.geocode({ location: latLng }, async function (results, status) {
+                    if (status === google.maps.GeocoderStatus.OK && results.length > 0) {
+                        const address = results[0].formatted_address || 'Address not available';
+                        const windowContent = `<h1>${charityName}</h1><h3>${charityDesc}</h3><p>Address: ${address}</p><p>Rating: Loading...</p>`;
+                        createMapMarker(latLng, windowContent, charityType, shiftLength, avaDays);
+                    } else {
+                        console.error('Error performing reverse geocoding:', status);
+                    }
+                });
+            }
+        }
+
+        //displays marker object
+        function createMapMarker(posData, windowContent, charityType, shiftHours, availableDays) {
+            const marker = new google.maps.Marker({
+                availableDays,
+                charityType,
+                position: posData,
+                shiftHours,
+                map,
+                infoWindowContent: windowContent
+            });
+
+            //allows markers to be clickable
+            marker.addListener("click", ({ domEvent, latLng }) => {
+                const { target } = domEvent;
+                infoWindow.close();
+                infoWindow.setContent(marker.infoWindowContent);
+                infoWindow.open(marker.map, marker);
+            });
+
+            markers.push(marker);
+        }
+        
+        //places markers on map
+        function setMapOnAll(map) {
+            displayMakers = markers;
+            for (let i = 0; i < displayMakers.length; i++) {
+                displayMakers[i].setMap(map);
+            }
+        }
+        //places markers on map
+        function setCharitySpecific(map) {
+            for (let i = 0; i < displayMakers.length; i++) {
+                displayMakers[i].setMap(map);
+            }
+        }
+
+        initMap();
+    </script>
+    <!--Script for API Keys-->
+    <script src="https://maps.googleapis.com/maps/api/js?key='YOUR_API_KEY_HERE'&callback=initMap&libraries=places"
+        async defer></script>
+
+</body>
+
+</html>
